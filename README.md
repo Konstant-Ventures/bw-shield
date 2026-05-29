@@ -73,15 +73,39 @@ bws secret list
 bw get item "My Secret"
 ```
 
-### Launching from a non-interactive shell (AI agents, CI, scheduled tasks)
+### For AI agents — launch an interactive window for the user
 
-When PowerShell is running in **NonInteractive** mode (common for AI agents and automation), `Read-Host` is blocked and the window closes immediately. Use `cmd /c start` to create a brand-new interactive console:
+When PowerShell is running in **NonInteractive** mode (common for AI agents and automation), `Read-Host` is blocked. The helper script opens a truly interactive window so the user can type their password safely:
+
+```powershell
+.\Start-BwShield.ps1
+```
+
+This is the exact same as running:
 
 ```batch
 cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
 ```
 
-> **Why this works:** `cmd /c start` creates a new interactive console that does **not** inherit the parent shell's `NonInteractive` flag. `Start-Process pwsh` inherits it, which is why it crashes.
+> **Why this works:** `cmd /c start` creates a brand-new interactive console that does **not** inherit the parent shell's `NonInteractive` flag. `Start-Process pwsh` inherits it, which is why it crashes.
+
+### For AI agents — direct authentication (no window needed)
+
+If you want the AI to authenticate **directly in the current session** so it can use `bw`/`bws` immediately, create a one-time password file and run:
+
+```powershell
+# The user puts their master password in this file
+$env:TEMP\bw-pass.txt
+
+.\bw-shield.ps1 -PasswordFile "$env:TEMP\bw-pass.txt"
+```
+
+The script will:
+1. Read the password from the file
+2. Unlock Bitwarden and export `BW_SESSION`
+3. Retrieve the machine token and export `BWS_ACCESS_TOKEN`
+4. **Immediately delete the password file**
+5. The AI can now run `bw` and `bws` commands in the same session.
 
 ### Isolated mode (credentials trapped in child window)
 
@@ -194,7 +218,13 @@ bw list items --search "ops-bootstrap" | ConvertFrom-Json | Select-Object name
 
 ### "The window opens and immediately closes"
 
-You are launching from a non-interactive shell. `Start-Process pwsh` inherits the `NonInteractive` flag and blocks `Read-Host`. Use `cmd /c start` instead:
+You are launching from a non-interactive shell. `Start-Process pwsh` inherits the `NonInteractive` flag and blocks `Read-Host`. Use the helper script instead:
+
+```powershell
+.\Start-BwShield.ps1
+```
+
+Or the raw command:
 
 ```batch
 cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
@@ -202,11 +232,11 @@ cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
 
 ### "PowerShell is in NonInteractive mode. Read and Prompt functionality is not available."
 
-Same issue as above — the parent shell is non-interactive. Use `cmd /c start`.
+Same issue as above — the parent shell is non-interactive. Use `Start-BwShield.ps1`.
 
 ### "The argument 'D:\01' is not recognized as the name of a script file"
 
-Path contains spaces and the launcher is not quoting it properly. Use the exact command above with quotes around the empty window title (`""`) and the script path.
+Path contains spaces and the launcher is not quoting it properly. Use `Start-BwShield.ps1` which handles quoting correctly.
 
 ### "Access Token field is empty"
 

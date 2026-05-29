@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Conditional `bw config server` to avoid forced logout when already on the correct server.
 - Mock-based end-to-end test suite in `tests/`.
 
+### Added
+- `Start-BwShield.ps1` helper script for AI agents and non-interactive shells.
+  Wraps the proven `cmd /c start` launcher so you do not have to remember
+  the full command.
+- Direct authentication support for AI agents via `-PasswordFile` on
+  `bw-shield.ps1`.
+
 ### Fixed
 - Corrected the recommended launcher for non-interactive shells.
   `Start-Process pwsh` and `launch-interactive.cmd` inherit the `NonInteractive`
