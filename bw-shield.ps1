@@ -18,6 +18,9 @@
     Use -Isolate to spawn a separate window where credentials stay confined to
     that child process (AI agents in the parent will not be able to use the CLIs).
 
+    IMPORTANT: If you are running this from a non-interactive shell (e.g. an AI
+    agent), Read-Host will be blocked. Use launch-interactive.cmd instead.
+
 .PARAMETER ServerUrl
     Bitwarden server URL. Defaults to https://vault.bitwarden.eu.
 

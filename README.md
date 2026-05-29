@@ -73,6 +73,22 @@ bws secret list
 bw get item "My Secret"
 ```
 
+### Launching from a non-interactive shell (AI agents, CI, scheduled tasks)
+
+When PowerShell is running in **NonInteractive** mode (common for AI agents and automation), `Read-Host` is blocked and the window closes immediately. Use the provided helper:
+
+```batch
+.\launch-interactive.cmd
+```
+
+Or directly via `cmd`:
+
+```batch
+cmd /c start "" ".\launch-interactive.cmd"
+```
+
+> **Why this works:** `cmd /c start` creates a brand-new interactive console that does **not** inherit the parent shell's `NonInteractive` flag. `Start-Process pwsh` does inherit it, which is why it crashes.
+
 ### Isolated mode (credentials trapped in child window)
 
 ```powershell
@@ -181,6 +197,22 @@ Check that the vault item name exactly matches your config. You can verify with:
 ```powershell
 bw list items --search "ops-bootstrap" | ConvertFrom-Json | Select-Object name
 ```
+
+### "The window opens and immediately closes"
+
+You are launching from a non-interactive shell. Use the helper:
+
+```batch
+.\launch-interactive.cmd
+```
+
+### "PowerShell is in NonInteractive mode. Read and Prompt functionality is not available."
+
+Same issue as above — the parent shell is non-interactive. Launch via `launch-interactive.cmd`.
+
+### "The argument 'D:\01' is not recognized as the name of a script file"
+
+Path contains spaces and the launcher is not quoting it properly. Use `launch-interactive.cmd` which handles quoting correctly.
 
 ### "Access Token field is empty"
 
