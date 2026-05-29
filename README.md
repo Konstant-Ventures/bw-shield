@@ -75,19 +75,13 @@ bw get item "My Secret"
 
 ### Launching from a non-interactive shell (AI agents, CI, scheduled tasks)
 
-When PowerShell is running in **NonInteractive** mode (common for AI agents and automation), `Read-Host` is blocked and the window closes immediately. Use the provided helper:
+When PowerShell is running in **NonInteractive** mode (common for AI agents and automation), `Read-Host` is blocked and the window closes immediately. Use `cmd /c start` to create a brand-new interactive console:
 
 ```batch
-.\launch-interactive.cmd
+cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
 ```
 
-Or directly via `cmd`:
-
-```batch
-cmd /c start "" ".\launch-interactive.cmd"
-```
-
-> **Why this works:** `cmd /c start` creates a brand-new interactive console that does **not** inherit the parent shell's `NonInteractive` flag. `Start-Process pwsh` does inherit it, which is why it crashes.
+> **Why this works:** `cmd /c start` creates a new interactive console that does **not** inherit the parent shell's `NonInteractive` flag. `Start-Process pwsh` inherits it, which is why it crashes.
 
 ### Isolated mode (credentials trapped in child window)
 
@@ -200,19 +194,19 @@ bw list items --search "ops-bootstrap" | ConvertFrom-Json | Select-Object name
 
 ### "The window opens and immediately closes"
 
-You are launching from a non-interactive shell. Use the helper:
+You are launching from a non-interactive shell. `Start-Process pwsh` inherits the `NonInteractive` flag and blocks `Read-Host`. Use `cmd /c start` instead:
 
 ```batch
-.\launch-interactive.cmd
+cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
 ```
 
 ### "PowerShell is in NonInteractive mode. Read and Prompt functionality is not available."
 
-Same issue as above — the parent shell is non-interactive. Launch via `launch-interactive.cmd`.
+Same issue as above — the parent shell is non-interactive. Use `cmd /c start`.
 
 ### "The argument 'D:\01' is not recognized as the name of a script file"
 
-Path contains spaces and the launcher is not quoting it properly. Use `launch-interactive.cmd` which handles quoting correctly.
+Path contains spaces and the launcher is not quoting it properly. Use the exact command above with quotes around the empty window title (`""`) and the script path.
 
 ### "Access Token field is empty"
 

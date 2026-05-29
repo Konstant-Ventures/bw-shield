@@ -19,7 +19,8 @@
     that child process (AI agents in the parent will not be able to use the CLIs).
 
     IMPORTANT: If you are running this from a non-interactive shell (e.g. an AI
-    agent), Read-Host will be blocked. Use launch-interactive.cmd instead.
+    agent), Read-Host will be blocked. Launch via cmd /c start instead:
+      cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
 
 .PARAMETER ServerUrl
     Bitwarden server URL. Defaults to https://vault.bitwarden.eu.

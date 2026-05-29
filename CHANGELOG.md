@@ -19,3 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `bw status` check before unlock to provide clear error messages.
 - Conditional `bw config server` to avoid forced logout when already on the correct server.
 - Mock-based end-to-end test suite in `tests/`.
+
+### Fixed
+- Corrected the recommended launcher for non-interactive shells.
+  `Start-Process pwsh` and `launch-interactive.cmd` inherit the `NonInteractive`
+  flag and cause `Read-Host` to fail. The reliable method is:
+  `cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"`.
