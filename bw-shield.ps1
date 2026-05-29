@@ -2,39 +2,37 @@
 
 <#
 .SYNOPSIS
-    Initializes an isolated, secure Bitwarden session shielded from the parent environment.
+    Authenticates to Bitwarden and makes the session available to the current shell.
 
 .DESCRIPTION
-    bw-shield spawns a new PowerShell window where you authenticate to Bitwarden
-    Password Manager and Secrets Manager. The master password, session key, and
-    machine account access token are confined to the child process and are never
-    exposed to the parent terminal, shell history, or any AI assistants running
-    in the parent session.
+    bw-shield authenticates to Bitwarden Password Manager and retrieves the
+    Secrets Manager machine-account token, then exports both credentials as
+    environment variables in the current session.
 
-    Secrets are never written to disk. All credentials live only in memory
-    inside the isolated child process.
+    The master password is collected with Read-Host -AsSecureString so it never
+    appears in terminal output or scrollback.
+
+    By default everything runs in the current PowerShell session so AI agents
+    and automation can use 'bw' and 'bws' immediately after authentication.
+
+    Use -Isolate to spawn a separate window where credentials stay confined to
+    that child process (AI agents in the parent will not be able to use the CLIs).
 
 .PARAMETER ServerUrl
-    Bitwarden server URL. Defaults to the value in the config file
-    or https://vault.bitwarden.eu.
+    Bitwarden server URL. Defaults to https://vault.bitwarden.eu.
 
 .PARAMETER VaultItemName
-    Name of the Password Manager vault item that stores the machine account token.
-    Defaults to the value in the config file.
+    Password Manager vault item that stores the machine account token.
 
 .PARAMETER AccessTokenFieldName
-    Name of the custom field within the vault item that holds the access token.
-    Defaults to the value in the config file.
+    Custom field name inside the vault item that holds the access token.
 
 .PARAMETER ConfigPath
     Path to a JSON configuration file.
 
-.PARAMETER NoProfile
-    Do not load the PowerShell profile in the child session.
-
-.PARAMETER Child
-    Internal flag. Indicates this instance is the isolated child session.
-    Do not use manually.
+.PARAMETER Isolate
+    Spawn a new isolated PowerShell window. The session key and access token will
+    NOT be available in the current session.
 #>
 
 [CmdletBinding()]
@@ -52,137 +50,111 @@ param(
     [string]$ConfigPath,
 
     [Parameter()]
-    [switch]$NoProfile,
-
-    [Parameter()]
-    [switch]$Child
+    [switch]$Isolate
 )
 
 $ErrorActionPreference = 'Stop'
 
-# Resolve configuration precedence: CLI > config file > defaults
+# ── Configuration resolution ─────────────────────────────────────────────────
 $scriptDir = Split-Path -Parent $PSCommandPath
 $defaultConfigPath = Join-Path $scriptDir 'config' 'defaults.json'
 
-$config = @{}
+$config = @{
+    serverUrl            = 'https://vault.bitwarden.eu'
+    vaultItemName        = 'Bitwarden SM - ops-bootstrap Access Token'
+    accessTokenFieldName = 'Access Token'
+}
+
 if (Test-Path $defaultConfigPath) {
-    $config = Get-Content $defaultConfigPath -Raw | ConvertFrom-Json -AsHashtable
+    $defaults = Get-Content $defaultConfigPath -Raw | ConvertFrom-Json -AsHashtable
+    foreach ($key in $defaults.Keys) { $config[$key] = $defaults[$key] }
 }
 
 if ($ConfigPath -and (Test-Path $ConfigPath)) {
-    $userConfig = Get-Content $ConfigPath -Raw | ConvertFrom-Json -AsHashtable
-    foreach ($key in $userConfig.Keys) {
-        $config[$key] = $userConfig[$key]
-    }
+    $user = Get-Content $ConfigPath -Raw | ConvertFrom-Json -AsHashtable
+    foreach ($key in $user.Keys) { $config[$key] = $user[$key] }
 }
 
-# Apply CLI overrides last
-if ($ServerUrl) { $config['serverUrl'] = $ServerUrl }
-if ($VaultItemName) { $config['vaultItemName'] = $VaultItemName }
-if ($AccessTokenFieldName) { $config['accessTokenFieldName'] = $AccessTokenFieldName }
+if ($ServerUrl)             { $config['serverUrl'] = $ServerUrl }
+if ($VaultItemName)         { $config['vaultItemName'] = $VaultItemName }
+if ($AccessTokenFieldName)  { $config['accessTokenFieldName'] = $AccessTokenFieldName }
 
-# Ensure defaults exist
-if (-not $config['serverUrl']) { $config['serverUrl'] = 'https://vault.bitwarden.eu' }
-if (-not $config['vaultItemName']) { $config['vaultItemName'] = 'Bitwarden SM - ops-bootstrap Access Token' }
-if (-not $config['accessTokenFieldName']) { $config['accessTokenFieldName'] = 'Access Token' }
-
-# ── Spawn child session if this is the parent ─────────────────────────────────
-if (-not $Child) {
-    $argList = @('-NoExit')
-    if ($NoProfile) { $argList += '-NoProfile' }
-    $argList += '-File', $PSCommandPath, '-Child'
-
-    # Forward resolved config so the child doesn't re-read (avoids file races)
-    $argList += '-ServerUrl', $config['serverUrl']
-    $argList += '-VaultItemName', $config['vaultItemName']
-    $argList += '-AccessTokenFieldName', $config['accessTokenFieldName']
-
+# ── Isolate mode ──────────────────────────────────────────────────────────────
+if ($Isolate) {
+    $argList = @('-NoExit', '-File', $PSCommandPath, '-ServerUrl', $config['serverUrl'],
+                '-VaultItemName', $config['vaultItemName'],
+                '-AccessTokenFieldName', $config['accessTokenFieldName'])
     Start-Process -FilePath 'pwsh' -ArgumentList $argList -WindowStyle Normal
-    exit
+    Write-Host 'Isolated session launched in a new window.' -ForegroundColor Green
+    return
 }
 
-# ── Child session logic ───────────────────────────────────────────────────────
-
-# Verify CLI tools
-$requiredTools = @('bw', 'bws')
-foreach ($tool in $requiredTools) {
+# ── Prerequisite checks ───────────────────────────────────────────────────────
+$required = @('bw', 'bws')
+foreach ($tool in $required) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
-        Write-Host "ERROR: '$tool' was not found in PATH." -ForegroundColor Red
-        Write-Host "       Install the Bitwarden CLI and ensure it is on your PATH." -ForegroundColor Yellow
-        Read-Host "`nPress Enter to exit"
-        exit 1
+        throw "'$tool' was not found in PATH. Install the Bitwarden CLI and ensure it is on your PATH."
     }
 }
 
-# Configure server
-try {
+# ── Status & server configuration ─────────────────────────────────────────────
+$statusJson = & bw status --raw 2>$null
+if ($LASTEXITCODE -ne 0 -or -not $statusJson) {
+    throw "Unable to query Bitwarden status. Ensure 'bw' is working."
+}
+
+$status = $statusJson | ConvertFrom-Json
+
+if ($status.status -eq 'unauthenticated') {
+    throw "You are not logged in to Bitwarden on this device. Run 'bw login' first, then re-run bw-shield."
+}
+
+# bw config server requires logout first, so only run when necessary
+if ($status.serverUrl -ne $config['serverUrl']) {
     & bw config server $config['serverUrl'] 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "bw config server failed (exit: $LASTEXITCODE)" }
-
-    & bws config server-base $config['serverUrl'] 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "bws config server-base failed (exit: $LASTEXITCODE)" }
-}
-catch {
-    Write-Host "ERROR: Failed to configure Bitwarden server ($($config['serverUrl']))." -ForegroundColor Red
-    Write-Host "       $_" -ForegroundColor DarkGray
-    Read-Host "`nPress Enter to exit"
-    exit 1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to switch Bitwarden server. Run 'bw logout' first if you need to change servers."
+    }
 }
 
+& bws config server-base $config['serverUrl'] 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Failed to configure Secrets Manager server-base." }
+
+# ── Authentication ──────────────────────────────────────────────────────────────
 Clear-Host
-
 Write-Host '================================================================' -ForegroundColor Cyan
 Write-Host '                     bw-shield v1.0.0                           ' -ForegroundColor Cyan
 Write-Host '        Isolated Bitwarden Session for Secure Workflows         ' -ForegroundColor Cyan
 Write-Host '================================================================' -ForegroundColor Cyan
 Write-Host ''
 
-# ── Step 1: Check login status ────────────────────────────────────────────────
-$statusJson = & bw status --raw 2>$null
-if ($LASTEXITCODE -ne 0 -or -not $statusJson) {
-    Write-Host "ERROR: Unable to query Bitwarden status. Ensure 'bw' is working." -ForegroundColor Red
-    Read-Host "`nPress Enter to exit"
-    exit 1
-}
+if ($status.status -eq 'locked') {
+    Write-Host 'Bitwarden vault is locked.' -ForegroundColor Yellow
+    $securePassword = Read-Host 'Enter your Bitwarden master password' -AsSecureString
 
-$status = $statusJson | ConvertFrom-Json
-if ($status.status -eq 'unauthenticated') {
-    Write-Host "ERROR: You are not logged in to Bitwarden on this device." -ForegroundColor Red
-    Write-Host "       Run 'bw login' first, then re-run bw-shield." -ForegroundColor Yellow
-    Read-Host "`nPress Enter to exit"
-    exit 1
-}
+    $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+    $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
 
-# ── Step 2: Unlock / authenticate ─────────────────────────────────────────────
-Write-Host 'Step 1: Password Manager Authentication' -ForegroundColor Yellow
-Write-Host '────────────────────────────────────────' -ForegroundColor DarkYellow
-
-$securePassword = Read-Host 'Enter your Bitwarden master password' -AsSecureString
-$ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-$plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
-[System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-
-try {
-    $env:BW_SESSION = ($plainPassword | bw unlock --raw 2>$null).Trim()
-    if ($LASTEXITCODE -ne 0 -or -not $env:BW_SESSION) {
-        throw "Authentication failed. Check your master password."
+    try {
+        $env:BW_SESSION = ($plain | bw unlock --raw 2>$null).Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $env:BW_SESSION) {
+            throw "Authentication failed. Check your master password."
+        }
+        Write-Host '[OK] Password Manager authenticated' -ForegroundColor Green
     }
-    Write-Host "  [OK] Password Manager authenticated" -ForegroundColor Green
+    finally {
+        $plain = $null
+        [System.GC]::Collect()
+    }
 }
-catch {
-    Write-Host "  [FAIL] $_" -ForegroundColor Red
-    Read-Host "`nPress Enter to exit"
-    exit 1
-}
-finally {
-    $plainPassword = $null
-    [System.GC]::Collect()
+elseif ($status.status -eq 'unlocked') {
+    Write-Host '[OK] Vault already unlocked' -ForegroundColor Green
 }
 
-# ── Step 3: Retrieve machine account access token ─────────────────────────────
+# ── Retrieve machine account access token ─────────────────────────────────────
 Write-Host ''
-Write-Host 'Step 2: Retrieving Machine Account Token' -ForegroundColor Yellow
-Write-Host '─────────────────────────────────────────' -ForegroundColor DarkYellow
+Write-Host 'Retrieving Machine Account Token...' -ForegroundColor Yellow
 
 try {
     & bw sync --session $env:BW_SESSION 2>$null | Out-Null
@@ -205,10 +177,10 @@ try {
     }
 
     $env:BWS_ACCESS_TOKEN = $tokenField.value
-    Write-Host "  [OK] Machine account token loaded" -ForegroundColor Green
+    Write-Host '[OK] Machine account token loaded' -ForegroundColor Green
 }
 catch {
-    Write-Host "  [FAIL] $_" -ForegroundColor Red
+    Write-Host "[WARN] $_" -ForegroundColor Red
 }
 
 # ── Ready ─────────────────────────────────────────────────────────────────────
@@ -220,10 +192,10 @@ Write-Host '  BWS_ACCESS_TOKEN  | Secrets Manager machine account token     ' -F
 Write-Host '================================================================' -ForegroundColor Cyan
 Write-Host ''
 Write-Host 'Available commands:' -ForegroundColor White
-Write-Host '  bws project list     List Secrets Manager projects' -ForegroundColor Gray
-Write-Host '  bws secret list      List Secrets Manager secrets' -ForegroundColor Gray
-Write-Host '  bws project create   Create a new project' -ForegroundColor Gray
-Write-Host '  bws secret create    Create a new secret' -ForegroundColor Gray
-Write-Host '  exit                 Close this isolated session' -ForegroundColor Gray
+Write-Host '  bw list items          List Password Manager items' -ForegroundColor Gray
+Write-Host '  bw get item <name>     Retrieve a specific item' -ForegroundColor Gray
+Write-Host '  bws project list       List Secrets Manager projects' -ForegroundColor Gray
+Write-Host '  bws secret list        List Secrets Manager secrets' -ForegroundColor Gray
+Write-Host '  bws secret get <id>    Retrieve a specific secret' -ForegroundColor Gray
 Write-Host ''
-Write-Host "Type 'bws --help' for full command reference." -ForegroundColor DarkGray
+Write-Host "Type 'bw --help' or 'bws --help' for full command reference." -ForegroundColor DarkGray

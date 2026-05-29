@@ -1,27 +1,30 @@
 # bw-shield
 
-**bw-shield** is a secure-session wrapper for the Bitwarden CLI (`bw`) and Bitwarden Secrets Manager CLI (`bws`). It ensures that your master password, session key, and machine-account access token are never exposed to the parent terminal, shell history, or any AI coding assistants running in the parent session.
+**bw-shield** is a secure-session wrapper for the Bitwarden CLI (`bw`) and Bitwarden Secrets Manager CLI (`bws`). It lets you authenticate with your master password in a way that never exposes it to terminal scrollback or AI agents, then exports the session credentials into the **current** PowerShell session so you (and any AI assistant attached to it) can use both CLIs immediately.
 
 ## The Problem
 
-When you run Bitwarden CLI commands directly in your terminal (or in a terminal shared with an AI agent), the agent can observe:
+When you run Bitwarden CLI commands directly in a terminal that is shared with an AI coding assistant, the assistant can observe:
 
-- Your master password when you type it
-- The `BW_SESSION` token after unlock
-- The `BWS_ACCESS_TOKEN` after retrieval
+- Your master password when you type it into a prompt
+- Access tokens and session keys when you `export` them
+- Long-lived machine-account credentials in command history or scrollback
 
-These secrets may end up in shell history, environment dumps, or AI agent logs.
+`bw-shield` solves this by handling authentication securely and keeping the master password out of the terminal output entirely.
 
 ## The Solution
 
-`bw-shield` spawns a **fully isolated child PowerShell process**. Inside that process:
+`bw-shield` authenticates in the **current** PowerShell session:
 
-1. You type your master password interactively (secure input, hidden from parent)
-2. `bw-shield` authenticates to Bitwarden Password Manager
-3. It retrieves your Secrets Manager machine-account token from the vault
-4. Both `BW_SESSION` and `BWS_ACCESS_TOKEN` are set **only** in the child process memory
+1. Checks whether your vault is already unlocked, locked, or unauthenticated
+2. If locked, prompts for your master password with `Read-Host -AsSecureString` — the password is **never echoed** to the terminal
+3. Unlocks Bitwarden Password Manager and stores `BW_SESSION`
+4. Retrieves your Secrets Manager machine-account token from the vault and stores `BWS_ACCESS_TOKEN`
+5. Both environment variables are now available in the current session
 
-The parent process (and any AI agent attached to it) never sees these values.
+AI assistants can then run `bw` and `bws` commands on your behalf without ever having seen your master password or the machine access token in the terminal output.
+
+> **Paranoid mode:** Use `-Isolate` to spawn a fully separate PowerShell window where credentials stay confined. In that mode the AI in the parent terminal will **not** be able to use `bw`/`bws`.
 
 ## Installation
 
@@ -38,16 +41,13 @@ The parent process (and any AI agent attached to it) never sees these values.
 # Clone the repository
 git clone https://github.com/konstant-ventures/bw-shield.git
 
-# Run directly
+# Run directly (authenticates in the current session)
 .\bw-shield\bw-shield.ps1
 ```
 
 ### Optional: Add to PATH
 
-Add the repository folder to your `PATH` so you can run `bw-shield` from anywhere:
-
 ```powershell
-# Windows (User PATH)
 $target = "D:\01 - Workspace\01 - Infrastructure\secrets\bw-shield"
 [Environment]::SetEnvironmentVariable("Path", "$target;$env:Path", "User")
 ```
@@ -60,11 +60,26 @@ bw-shield.ps1
 
 ## Usage
 
+### Default — Authenticate in current session (AI-friendly)
+
 ```powershell
 .\bw-shield.ps1
 ```
 
-A new PowerShell window opens. Enter your Bitwarden master password. The session is ready when you see the **Session ready** banner.
+Enter your master password when prompted. The session key and access token are exported to the current shell. You can immediately run:
+
+```powershell
+bws secret list
+bw get item "My Secret"
+```
+
+### Isolated mode (credentials trapped in child window)
+
+```powershell
+.\bw-shield.ps1 -Isolate
+```
+
+A new PowerShell window opens. Credentials stay in that window only. Use this when you want zero exposure in the parent terminal.
 
 ### Command-line Options
 
@@ -74,7 +89,7 @@ A new PowerShell window opens. Enter your Bitwarden master password. The session
 | `-VaultItemName` | Vault item containing the machine token |
 | `-AccessTokenFieldName` | Custom field name that holds the token |
 | `-ConfigPath` | Path to a JSON config file with defaults |
-| `-NoProfile` | Skip loading your PowerShell profile in the child session |
+| `-Isolate` | Spawn a new isolated window instead of the current session |
 
 ### Example with Overrides
 
@@ -104,24 +119,26 @@ Precedence: CLI parameters > config file > `config/defaults.json`.
 
 ## How It Works
 
+### Default (Current Session) Mode
+
 ```
-Parent Terminal (AI agent can see here)
+Current Terminal (AI agent is here)
   |
-  |-- starts --> Child PowerShell Process (isolated window)
-                      |
-                      |-- Read-Host master password (secure, hidden)
-                      |-- bw unlock (session key stays in child env)
-                      |-- bw list items (retrieve access token)
-                      |-- Set env vars in child ONLY
-                      |-- Interactive shell ready
+  |-- bw-shield.ps1
+        |-- bw status               (check lock state)
+        |-- Read-Host -AsSecureString  (master password hidden)
+        |-- bw unlock --raw          (session key in $env:BW_SESSION)
+        |-- bw list items            (retrieve access token)
+        |-- $env:BWS_ACCESS_TOKEN    (set in current session)
+        |-- AI can now run bw/bws    (available in current shell)
 ```
 
 ### Security Properties
 
+- **Master password never echoed**: `Read-Host -AsSecureString` suppresses all characters from terminal output and scrollback.
 - **No disk persistence**: Secrets are never written to files.
-- **No parent exposure**: Environment variables exist only in the child process.
-- **No command-line leakage**: The master password is read via secure prompt and piped to `bw` via stdin, never appearing in process arguments.
-- **Clean teardown**: When you close the child window, all secrets are gone from memory (process termination).
+- **No command-line leakage**: The master password is piped to `bw` via stdin, never appearing in process arguments.
+- **Session-scoped only**: Environment variables last only until you close the terminal.
 
 ## Vault Setup
 
@@ -133,6 +150,16 @@ Before running `bw-shield`, create a Password Manager vault item:
 4. Paste your Secrets Manager machine-account access token into that field.
 5. Save the item.
 
+## Testing
+
+A mock-based end-to-end test suite is included in `tests/`.
+
+```powershell
+& .\tests\Run-E2ETest.ps1
+```
+
+This validates the full script flow (status checks, unlock, token retrieval, and environment variable export) without needing real Bitwarden credentials.
+
 ## Troubleshooting
 
 ### "bw was not found in PATH"
@@ -142,6 +169,10 @@ Install the Bitwarden CLI and ensure it is on your system PATH.
 ### "You are not logged in to Bitwarden on this device"
 
 Run `bw login` in any terminal first. `bw-shield` only performs `bw unlock`; it does not handle the initial device login.
+
+### "Failed to switch Bitwarden server"
+
+If you recently changed servers, run `bw logout` first, then `bw login` with the new server, then re-run `bw-shield`.
 
 ### "Vault item not found"
 
