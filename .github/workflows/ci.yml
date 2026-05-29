@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $results = Invoke-ScriptAnalyzer -Path ./bw-shield.ps1 -Severity Warning -Recurse
+          $results | Format-Table -AutoSize
+          if ($results) { exit 1 }
+
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          $errors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
+              "$PWD/bw-shield.ps1",
+              [ref]$null,
+              [ref]$errors
+          )
+          if ($errors) {
+              $errors | ForEach-Object { Write-Error $_.Message }
+              exit 1
+          }

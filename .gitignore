@@ -1,0 +1,22 @@
+# Windows / PowerShell
+*.exe
+*.dll
+*.pdb
+
+# PowerShell profiles / logs
+*.log
+
+# Config overrides that may contain user-specific paths (not secrets, but noise)
+# If you want to track a shared config, name it explicitly.
+# config/*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Git
+*.orig
