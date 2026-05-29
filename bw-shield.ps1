@@ -50,7 +50,10 @@ param(
     [string]$ConfigPath,
 
     [Parameter()]
-    [switch]$Isolate
+    [switch]$Isolate,
+
+    [Parameter()]
+    [string]$PasswordFile
 )
 
 $ErrorActionPreference = 'Stop'
@@ -121,7 +124,7 @@ if ($status.serverUrl -ne $config['serverUrl']) {
 if ($LASTEXITCODE -ne 0) { throw "Failed to configure Secrets Manager server-base." }
 
 # ── Authentication ──────────────────────────────────────────────────────────────
-Clear-Host
+if ($Host.Name -eq 'ConsoleHost') { try { Clear-Host } catch { } }
 Write-Host '================================================================' -ForegroundColor Cyan
 Write-Host '                     bw-shield v1.0.0                           ' -ForegroundColor Cyan
 Write-Host '        Isolated Bitwarden Session for Secure Workflows         ' -ForegroundColor Cyan
@@ -130,23 +133,34 @@ Write-Host ''
 
 if ($status.status -eq 'locked') {
     Write-Host 'Bitwarden vault is locked.' -ForegroundColor Yellow
-    $securePassword = Read-Host 'Enter your Bitwarden master password' -AsSecureString
 
-    $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-    $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
-    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-
-    try {
-        $env:BW_SESSION = ($plain | bw unlock --raw 2>$null).Trim()
+    if ($PasswordFile -and (Test-Path $PasswordFile)) {
+        Write-Host "Using password from file (will be deleted after unlock)..." -ForegroundColor DarkGray
+        $env:BW_SESSION = (& bw unlock --passwordfile $PasswordFile --raw 2>$null).Trim()
+        Remove-Item -LiteralPath $PasswordFile -Force
         if ($LASTEXITCODE -ne 0 -or -not $env:BW_SESSION) {
-            throw "Authentication failed. Check your master password."
+            throw "Authentication failed. Check your master password in the file."
         }
-        Write-Host '[OK] Password Manager authenticated' -ForegroundColor Green
     }
-    finally {
-        $plain = $null
-        [System.GC]::Collect()
+    else {
+        $securePassword = Read-Host 'Enter your Bitwarden master password' -AsSecureString
+
+        $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+        $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+
+        try {
+            $env:BW_SESSION = ($plain | bw unlock --raw 2>$null).Trim()
+            if ($LASTEXITCODE -ne 0 -or -not $env:BW_SESSION) {
+                throw "Authentication failed. Check your master password."
+            }
+        }
+        finally {
+            $plain = $null
+            [System.GC]::Collect()
+        }
     }
+    Write-Host '[OK] Password Manager authenticated' -ForegroundColor Green
 }
 elseif ($status.status -eq 'unlocked') {
     Write-Host '[OK] Vault already unlocked' -ForegroundColor Green
