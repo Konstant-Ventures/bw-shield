@@ -62,6 +62,28 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$stateDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'bw-shield'
+$stateFile = Join-Path $stateDir 'session.json'
+
+# Load saved session if it exists (avoids re-authenticating on every call)
+if ((Test-Path $stateFile) -and -not ($env:BW_SESSION -or $env:BWS_ACCESS_TOKEN)) {
+    $saved = Get-Content $stateFile -Raw | ConvertFrom-Json
+    $env:BW_SESSION = $saved.BW_SESSION
+    $env:BWS_ACCESS_TOKEN = $saved.BWS_ACCESS_TOKEN
+    Write-Host 'Session loaded from cache.' -ForegroundColor DarkGray
+
+    # Quick validation: check if bw is still unlocked
+    $check = & bw status --raw 2>$null
+    if ($LASTEXITCODE -eq 0 -and $check) {
+        $statusObj = $check | ConvertFrom-Json
+        if ($statusObj.status -ne 'unlocked') {
+            $env:BW_SESSION = $null
+            $env:BWS_ACCESS_TOKEN = $null
+            Write-Host 'Cached session expired. Re-authentication required.' -ForegroundColor Yellow
+        }
+    }
+}
+
 # ── Helper: GUI password dialog ───────────────────────────────────────────────
 function Read-PasswordFromGui {
     if ($env:BW_SHIELD_TEST -eq '1') {
@@ -295,3 +317,14 @@ Write-Host '  bws secret list        List Secrets Manager secrets' -ForegroundCo
 Write-Host '  bws secret get <id>    Retrieve a specific secret' -ForegroundColor Gray
 Write-Host ''
 Write-Host "Type 'bw --help' or 'bws --help' for full command reference." -ForegroundColor DarkGray
+
+# Persist the session so subsequent shell invocations can reuse it
+if ($env:BW_SESSION -or $env:BWS_ACCESS_TOKEN) {
+    $stateDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'bw-shield'
+    $null = New-Item -ItemType Directory -Force -Path $stateDir
+    $state = @{
+        BW_SESSION      = $env:BW_SESSION
+        BWS_ACCESS_TOKEN = $env:BWS_ACCESS_TOKEN
+    } | ConvertTo-Json -Compress
+    $state | Set-Content -Path (Join-Path $stateDir 'session.json') -Force -Encoding UTF8
+}
