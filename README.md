@@ -45,19 +45,6 @@ git clone https://github.com/konstant-ventures/bw-shield.git
 .\bw-shield\bw-shield.ps1
 ```
 
-### Optional: Add to PATH
-
-```powershell
-$target = "D:\01 - Workspace\01 - Infrastructure\secrets\bw-shield"
-[Environment]::SetEnvironmentVariable("Path", "$target;$env:Path", "User")
-```
-
-Then restart your terminal and run:
-
-```powershell
-bw-shield.ps1
-```
-
 ## Usage
 
 ### Default — Authenticate in current session (AI-friendly)
@@ -66,46 +53,22 @@ bw-shield.ps1
 .\bw-shield.ps1
 ```
 
-Enter your master password when prompted. The session key and access token are exported to the current shell. You can immediately run:
+A **GUI password dialog** appears on your screen. Type your master password (characters are masked with `*`), click OK, and the session is ready in the current shell. The AI agent can then run:
 
 ```powershell
 bws secret list
 bw get item "My Secret"
 ```
 
-### For AI agents — launch an interactive window for the user
+> **Why a GUI dialog?** `Read-Host` is blocked when PowerShell runs in NonInteractive mode (AI agents, CI runners, scheduled tasks). The GUI dialog works everywhere — interactive terminals, agent shells, and headless automation (via `-PasswordFile`).
 
-When PowerShell is running in **NonInteractive** mode (common for AI agents and automation), `Read-Host` is blocked. The helper script opens a truly interactive window so the user can type their password safely:
+### Using `Start-BwShield.ps1` (convenience wrapper)
 
 ```powershell
 .\Start-BwShield.ps1
 ```
 
-This is the exact same as running:
-
-```batch
-cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
-```
-
-> **Why this works:** `cmd /c start` creates a brand-new interactive console that does **not** inherit the parent shell's `NonInteractive` flag. `Start-Process pwsh` inherits it, which is why it crashes.
-
-### For AI agents — direct authentication (no window needed)
-
-If you want the AI to authenticate **directly in the current session** so it can use `bw`/`bws` immediately, create a one-time password file and run:
-
-```powershell
-# The user puts their master password in this file
-$env:TEMP\bw-pass.txt
-
-.\bw-shield.ps1 -PasswordFile "$env:TEMP\bw-pass.txt"
-```
-
-The script will:
-1. Read the password from the file
-2. Unlock Bitwarden and export `BW_SESSION`
-3. Retrieve the machine token and export `BWS_ACCESS_TOKEN`
-4. **Immediately delete the password file**
-5. The AI can now run `bw` and `bws` commands in the same session.
+A thin wrapper that dot-sources `bw-shield.ps1`. Identical behavior to running the main script directly.
 
 ### Isolated mode (credentials trapped in child window)
 
@@ -123,6 +86,7 @@ A new PowerShell window opens. Credentials stay in that window only. Use this wh
 | `-VaultItemName` | Vault item containing the machine token |
 | `-AccessTokenFieldName` | Custom field name that holds the token |
 | `-ConfigPath` | Path to a JSON config file with defaults |
+| `-PasswordFile` | Read master password from a file (deleted after use) |
 | `-Isolate` | Spawn a new isolated window instead of the current session |
 
 ### Example with Overrides
@@ -216,27 +180,13 @@ Check that the vault item name exactly matches your config. You can verify with:
 bw list items --search "ops-bootstrap" | ConvertFrom-Json | Select-Object name
 ```
 
-### "The window opens and immediately closes"
+### "The window opens and immediately closes" / "PowerShell is in NonInteractive mode"
 
-You are launching from a non-interactive shell. `Start-Process pwsh` inherits the `NonInteractive` flag and blocks `Read-Host`. Use the helper script instead:
-
-```powershell
-.\Start-BwShield.ps1
-```
-
-Or the raw command:
-
-```batch
-cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
-```
-
-### "PowerShell is in NonInteractive mode. Read and Prompt functionality is not available."
-
-Same issue as above — the parent shell is non-interactive. Use `Start-BwShield.ps1`.
+You are in a non-interactive shell. Run `bw-shield.ps1` directly — it uses a GUI password dialog that works in both interactive and non-interactive shells.
 
 ### "The argument 'D:\01' is not recognized as the name of a script file"
 
-Path contains spaces and the launcher is not quoting it properly. Use `Start-BwShield.ps1` which handles quoting correctly.
+Path with spaces issue in older launchers. Use `bw-shield.ps1` directly — it handles paths correctly via `$PSCommandPath`.
 
 ### "Access Token field is empty"
 

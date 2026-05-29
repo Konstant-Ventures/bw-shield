@@ -9,18 +9,13 @@
     Secrets Manager machine-account token, then exports both credentials as
     environment variables in the current session.
 
-    The master password is collected with Read-Host -AsSecureString so it never
-    appears in terminal output or scrollback.
-
-    By default everything runs in the current PowerShell session so AI agents
-    and automation can use 'bw' and 'bws' immediately after authentication.
+    By default, a GUI password dialog pops up so the master password is never
+    typed into the terminal and never appears in scrollback or agent logs. The
+    dialog works even when PowerShell is running in NonInteractive mode
+    (AI agents, CI, scheduled tasks).
 
     Use -Isolate to spawn a separate window where credentials stay confined to
     that child process (AI agents in the parent will not be able to use the CLIs).
-
-    IMPORTANT: If you are running this from a non-interactive shell (e.g. an AI
-    agent), Read-Host will be blocked. Launch via cmd /c start instead:
-      cmd /c start "" pwsh -Interactive -NoProfile -NoExit -File ".\bw-shield.ps1"
 
 .PARAMETER ServerUrl
     Bitwarden server URL. Defaults to https://vault.bitwarden.eu.
@@ -37,6 +32,11 @@
 .PARAMETER Isolate
     Spawn a new isolated PowerShell window. The session key and access token will
     NOT be available in the current session.
+
+.PARAMETER PasswordFile
+    Read the master password from a file instead of prompting. The file is
+    deleted immediately after reading. Use this for fully automated workflows
+    where no user interaction is possible.
 #>
 
 [CmdletBinding()]
@@ -61,6 +61,71 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ── Helper: GUI password dialog ───────────────────────────────────────────────
+function Read-PasswordFromGui {
+    if ($env:BW_SHIELD_TEST -eq '1') {
+        throw 'GUI skipped (test mode)'
+    }
+    $passwordScript = @'
+Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = "bw-shield"
+$form.Size = New-Object System.Drawing.Size(400,165)
+$form.StartPosition = "CenterScreen"
+$form.FormBorderStyle = "FixedDialog"
+$form.MaximizeBox = $false
+$form.MinimizeBox = $false
+
+$label = New-Object System.Windows.Forms.Label
+$label.Text = "Enter your Bitwarden master password:"
+$label.AutoSize = $true
+$label.Location = New-Object System.Drawing.Point(12,15)
+$form.Controls.Add($label)
+
+$textBox = New-Object System.Windows.Forms.TextBox
+$textBox.Location = New-Object System.Drawing.Point(12,38)
+$textBox.Size = New-Object System.Drawing.Size(360,23)
+$textBox.PasswordChar = "*"
+$textBox.UseSystemPasswordChar = $true
+$form.Controls.Add($textBox)
+
+$okButton = New-Object System.Windows.Forms.Button
+$okButton.Text = "OK"
+$okButton.Location = New-Object System.Drawing.Point(190,78)
+$okButton.Size = New-Object System.Drawing.Size(80,25)
+$okButton.DialogResult = "OK"
+$form.AcceptButton = $okButton
+$form.Controls.Add($okButton)
+
+$cancelButton = New-Object System.Windows.Forms.Button
+$cancelButton.Text = "Cancel"
+$cancelButton.Location = New-Object System.Drawing.Point(280,78)
+$cancelButton.Size = New-Object System.Drawing.Size(90,25)
+$cancelButton.DialogResult = "Cancel"
+$form.CancelButton = $cancelButton
+$form.Controls.Add($cancelButton)
+
+$form.Add_Shown({ $textBox.Focus() })
+$result = $form.ShowDialog()
+
+if ($result -eq "OK") {
+    $textBox.Text
+}
+$textBox.Dispose()
+$form.Dispose()
+'@
+
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($passwordScript))
+    $result = pwsh -STA -NoProfile -EncodedCommand $encoded 2>$null
+
+    if ($LASTEXITCODE -ne 0 -or -not $result) {
+        throw "Authentication cancelled or GUI dialog failed."
+    }
+    return $result
+}
 
 # ── Configuration resolution ─────────────────────────────────────────────────
 $scriptDir = Split-Path -Parent $PSCommandPath
@@ -116,7 +181,6 @@ if ($status.status -eq 'unauthenticated') {
     throw "You are not logged in to Bitwarden on this device. Run 'bw login' first, then re-run bw-shield."
 }
 
-# bw config server requires logout first, so only run when necessary
 if ($status.serverUrl -ne $config['serverUrl']) {
     & bw config server $config['serverUrl'] 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
@@ -128,43 +192,57 @@ if ($status.serverUrl -ne $config['serverUrl']) {
 if ($LASTEXITCODE -ne 0) { throw "Failed to configure Secrets Manager server-base." }
 
 # ── Authentication ──────────────────────────────────────────────────────────────
-if ($Host.Name -eq 'ConsoleHost') { try { Clear-Host } catch { } }
+try { Clear-Host } catch { }
 Write-Host '================================================================' -ForegroundColor Cyan
 Write-Host '                     bw-shield v1.0.0                           ' -ForegroundColor Cyan
-Write-Host '        Isolated Bitwarden Session for Secure Workflows         ' -ForegroundColor Cyan
+Write-Host '                                                               ' -ForegroundColor Cyan
 Write-Host '================================================================' -ForegroundColor Cyan
 Write-Host ''
 
 if ($status.status -eq 'locked') {
     Write-Host 'Bitwarden vault is locked.' -ForegroundColor Yellow
 
+    $plain = $null
     if ($PasswordFile -and (Test-Path $PasswordFile)) {
-        Write-Host "Using password from file (will be deleted after unlock)..." -ForegroundColor DarkGray
+        Write-Host 'Using password file...' -ForegroundColor DarkGray
         $env:BW_SESSION = (& bw unlock --passwordfile $PasswordFile --raw 2>$null).Trim()
         Remove-Item -LiteralPath $PasswordFile -Force
         if ($LASTEXITCODE -ne 0 -or -not $env:BW_SESSION) {
             throw "Authentication failed. Check your master password in the file."
         }
+        Write-Host '[OK] Password Manager authenticated' -ForegroundColor Green
     }
     else {
-        $securePassword = Read-Host 'Enter your Bitwarden master password' -AsSecureString
+        Write-Host 'A password dialog will appear on your screen.' -ForegroundColor DarkGray
 
-        $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
-        $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
-        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+        try {
+            $plain = Read-PasswordFromGui
+        }
+        catch {
+            # GUI failed or cancelled, try Read-Host as fallback (interactive shells)
+            try {
+                $secure = Read-Host 'Enter your Bitwarden master password' -AsSecureString
+                $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+                $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+            }
+            catch {
+                throw "Cannot read password interactively. Use -PasswordFile or run in an interactive terminal."
+            }
+        }
 
         try {
             $env:BW_SESSION = ($plain | bw unlock --raw 2>$null).Trim()
             if ($LASTEXITCODE -ne 0 -or -not $env:BW_SESSION) {
                 throw "Authentication failed. Check your master password."
             }
+            Write-Host '[OK] Password Manager authenticated' -ForegroundColor Green
         }
         finally {
             $plain = $null
             [System.GC]::Collect()
         }
     }
-    Write-Host '[OK] Password Manager authenticated' -ForegroundColor Green
 }
 elseif ($status.status -eq 'unlocked') {
     Write-Host '[OK] Vault already unlocked' -ForegroundColor Green

@@ -21,6 +21,9 @@ function Read-Host {
 # Override Clear-Host so the test output stays readable
 function Clear-Host { }
 
+# Set test mode so the GUI dialog is skipped (Read-Host mock handles it)
+$env:BW_SHIELD_TEST = '1'
+
 # Prepend mocks to PATH so the fake bw/bws are resolved first
 $originalPath = $env:PATH
 $env:PATH = "$mockDir;$env:PATH"
@@ -58,4 +61,5 @@ finally {
     $env:PATH = $originalPath
     $env:BW_SESSION = $null
     $env:BWS_ACCESS_TOKEN = $null
+    $env:BW_SHIELD_TEST = $null
 }
