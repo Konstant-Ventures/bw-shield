@@ -21,7 +21,7 @@ jobs:
       - name: Run PSScriptAnalyzer
         shell: pwsh
         run: |
-          $results = Invoke-ScriptAnalyzer -Path ./bw-shield.ps1 -Severity Warning -Recurse
+          $results = Invoke-ScriptAnalyzer -Path ./secret-gate.ps1 -Severity Warning -Recurse
           $results | Format-Table -AutoSize
           if ($results) { exit 1 }
 
@@ -35,7 +35,7 @@ jobs:
         run: |
           $errors = $null
           $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-              "$PWD/bw-shield.ps1",
+              "$PWD/secret-gate.ps1",
               [ref]$null,
               [ref]$errors
           )

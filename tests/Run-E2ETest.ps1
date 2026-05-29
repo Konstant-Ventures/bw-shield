@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
-    End-to-end test for bw-shield using mocked CLIs.
+    End-to-end test for secret-gate using mocked CLIs.
 #>
 $ErrorActionPreference = 'Stop'
 
 $repoRoot   = Split-Path -Parent $PSScriptRoot
 $mockDir    = Join-Path $repoRoot 'tests' 'mocks'
-$scriptPath = Join-Path $repoRoot 'bw-shield.ps1'
+$scriptPath = Join-Path $repoRoot 'secret-gate.ps1'
 
 # Override Read-Host so the script never blocks interactively
 function Read-Host {
@@ -22,7 +22,7 @@ function Read-Host {
 function Clear-Host { }
 
 # Set test mode so the GUI dialog is skipped (Read-Host mock handles it)
-$env:BW_SHIELD_TEST = '1'
+$env:SECRET_GATE_TEST = '1'
 
 # Prepend mocks to PATH so the fake bw/bws are resolved first
 $originalPath = $env:PATH
@@ -33,7 +33,7 @@ $env:BW_SESSION      = $null
 $env:BWS_ACCESS_TOKEN = $null
 
 try {
-    Write-Host '--- Running bw-shield end-to-end test ---' -ForegroundColor Cyan
+    Write-Host '--- Running secret-gate end-to-end test ---' -ForegroundColor Cyan
 
     & $scriptPath
 
@@ -61,5 +61,5 @@ finally {
     $env:PATH = $originalPath
     $env:BW_SESSION = $null
     $env:BWS_ACCESS_TOKEN = $null
-    $env:BW_SHIELD_TEST = $null
+    $env:SECRET_GATE_TEST = $null
 }

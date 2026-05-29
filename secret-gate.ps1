@@ -5,7 +5,7 @@
     Authenticates to Bitwarden and makes the session available to the current shell.
 
 .DESCRIPTION
-    bw-shield authenticates to Bitwarden Password Manager and retrieves the
+    secret-gate authenticates to Bitwarden Password Manager and retrieves the
     Secrets Manager machine-account token, then exports both credentials as
     environment variables in the current session.
 
@@ -62,7 +62,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$stateDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'bw-shield'
+$stateDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'secret-gate'
 $stateFile = Join-Path $stateDir 'session.json'
 
 # Load saved session if it exists (avoids re-authenticating on every call)
@@ -86,7 +86,7 @@ if ((Test-Path $stateFile) -and -not ($env:BW_SESSION -or $env:BWS_ACCESS_TOKEN)
 
 # ── Helper: GUI password dialog ───────────────────────────────────────────────
 function Read-PasswordFromGui {
-    if ($env:BW_SHIELD_TEST -eq '1') {
+    if ($env:SECRET_GATE_TEST -eq '1') {
         throw 'GUI skipped (test mode)'
     }
     $passwordScript = @'
@@ -94,7 +94,7 @@ Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
 Add-Type -AssemblyName System.Drawing -ErrorAction Stop
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "bw-shield"
+$form.Text = "secret-gate"
 $form.Size = New-Object System.Drawing.Size(400,165)
 $form.StartPosition = "CenterScreen"
 $form.FormBorderStyle = "FixedDialog"
@@ -200,7 +200,7 @@ if ($LASTEXITCODE -ne 0 -or -not $statusJson) {
 $status = $statusJson | ConvertFrom-Json
 
 if ($status.status -eq 'unauthenticated') {
-    throw "You are not logged in to Bitwarden on this device. Run 'bw login' first, then re-run bw-shield."
+    throw "You are not logged in to Bitwarden on this device. Run 'bw login' first, then re-run secret-gate."
 }
 
 if ($status.serverUrl -ne $config['serverUrl']) {
@@ -216,7 +216,7 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to configure Secrets Manager server-bas
 # ── Authentication ──────────────────────────────────────────────────────────────
 try { Clear-Host } catch { }
 Write-Host '================================================================' -ForegroundColor Cyan
-Write-Host '                     bw-shield v1.0.0                           ' -ForegroundColor Cyan
+Write-Host '                     secret-gate v1.0.0                        ' -ForegroundColor Cyan
 Write-Host '                                                               ' -ForegroundColor Cyan
 Write-Host '================================================================' -ForegroundColor Cyan
 Write-Host ''
@@ -320,7 +320,7 @@ Write-Host "Type 'bw --help' or 'bws --help' for full command reference." -Foreg
 
 # Persist the session so subsequent shell invocations can reuse it
 if ($env:BW_SESSION -or $env:BWS_ACCESS_TOKEN) {
-    $stateDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'bw-shield'
+$stateDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'secret-gate'
     $null = New-Item -ItemType Directory -Force -Path $stateDir
     $state = @{
         BW_SESSION      = $env:BW_SESSION

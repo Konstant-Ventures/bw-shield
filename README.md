@@ -1,56 +1,44 @@
-# bw-shield
+# secret-gate
 
-**bw-shield** is a secure-session wrapper for the Bitwarden CLI (`bw`) and Bitwarden Secrets Manager CLI (`bws`). It lets you authenticate with your master password in a way that never exposes it to terminal scrollback or AI agents, then exports the session credentials into the **current** PowerShell session so you (and any AI assistant attached to it) can use both CLIs immediately.
+**secret-gate** is a secure-session wrapper for secret manager CLIs (Bitwarden, 1Password, HashiCorp Vault, etc.). It lets you authenticate with your master password in a way that never exposes it to terminal scrollback or AI agents, then exports the session credentials into the **current** PowerShell session so you (and any AI assistant attached to it) can use the CLIs immediately.
 
 ## The Problem
 
-When you run Bitwarden CLI commands directly in a terminal that is shared with an AI coding assistant, the assistant can observe:
+When you run secret manager CLI commands directly in a terminal that is shared with an AI coding assistant, the assistant can observe:
 
 - Your master password when you type it into a prompt
 - Access tokens and session keys when you `export` them
 - Long-lived machine-account credentials in command history or scrollback
 
-`bw-shield` solves this by handling authentication securely and keeping the master password out of the terminal output entirely.
+`secret-gate` solves this by handling authentication securely and keeping the master password out of the terminal output entirely.
 
 ## The Solution
 
-`bw-shield` authenticates in the **current** PowerShell session:
+`secret-gate` authenticates in the **current** PowerShell session:
 
 1. Checks whether your vault is already unlocked, locked, or unauthenticated
-2. If locked, prompts for your master password with `Read-Host -AsSecureString` — the password is **never echoed** to the terminal
-3. Unlocks Bitwarden Password Manager and stores `BW_SESSION`
-4. Retrieves your Secrets Manager machine-account token from the vault and stores `BWS_ACCESS_TOKEN`
-5. Both environment variables are now available in the current session
+2. If locked, a **GUI password dialog** appears on your desktop — the password is masked and never typed into the terminal
+3. Unlocks the password manager and stores the session key
+4. Retrieves your machine-account token from the vault
+5. Both credentials are now available as environment variables in the current session
 
-AI assistants can then run `bw` and `bws` commands on your behalf without ever having seen your master password or the machine access token in the terminal output.
+AI assistants can then run CLI commands on your behalf without ever having seen your master password or the machine access token in the terminal output.
 
-> **Paranoid mode:** Use `-Isolate` to spawn a fully separate PowerShell window where credentials stay confined. In that mode the AI in the parent terminal will **not** be able to use `bw`/`bws`.
+> **Paranoid mode:** Use `-Isolate` to spawn a fully separate PowerShell window where credentials stay confined. In that mode the AI in the parent terminal will **not** be able to use the CLIs.
 
-## Installation
-
-### Prerequisites
+## Prerequisites
 
 - [PowerShell 7.2+](https://github.com/PowerShell/PowerShell)
 - [Bitwarden CLI (`bw`)](https://bitwarden.com/help/cli/)
 - [Bitwarden Secrets Manager CLI (`bws`)](https://bitwarden.com/help/secrets-manager-cli/)
 - You must have run `bw login` at least once on the machine so that `bw unlock` works.
 
-### Quick Install
-
-```powershell
-# Clone the repository
-git clone https://github.com/konstant-ventures/bw-shield.git
-
-# Run directly (authenticates in the current session)
-.\bw-shield\bw-shield.ps1
-```
-
 ## Usage
 
 ### Default — Authenticate in current session (AI-friendly)
 
 ```powershell
-.\bw-shield.ps1
+.\secret-gate.ps1
 ```
 
 A **GUI password dialog** appears on your screen. Type your master password (characters are masked with `*`), click OK, and the session is ready in the current shell. The AI agent can then run:
@@ -62,18 +50,18 @@ bw get item "My Secret"
 
 > **Why a GUI dialog?** `Read-Host` is blocked when PowerShell runs in NonInteractive mode (AI agents, CI runners, scheduled tasks). The GUI dialog works everywhere — interactive terminals, agent shells, and headless automation (via `-PasswordFile`).
 
-### Using `Start-BwShield.ps1` (convenience wrapper)
+### Using `Start-SecretGate.ps1` (convenience wrapper)
 
 ```powershell
-.\Start-BwShield.ps1
+.\Start-SecretGate.ps1
 ```
 
-A thin wrapper that dot-sources `bw-shield.ps1`. Identical behavior to running the main script directly.
+A thin wrapper that dot-sources `secret-gate.ps1`. Identical behavior to running the main script directly.
 
 ### Isolated mode (credentials trapped in child window)
 
 ```powershell
-.\bw-shield.ps1 -Isolate
+.\secret-gate.ps1 -Isolate
 ```
 
 A new PowerShell window opens. Credentials stay in that window only. Use this when you want zero exposure in the parent terminal.
@@ -88,12 +76,6 @@ A new PowerShell window opens. Credentials stay in that window only. Use this wh
 | `-ConfigPath` | Path to a JSON config file with defaults |
 | `-PasswordFile` | Read master password from a file (deleted after use) |
 | `-Isolate` | Spawn a new isolated window instead of the current session |
-
-### Example with Overrides
-
-```powershell
-.\bw-shield.ps1 -ServerUrl "https://vault.bitwarden.com" -VaultItemName "My SM Token"
-```
 
 ## Configuration
 
@@ -110,37 +92,38 @@ Create a JSON config file (e.g., `my-config.json`) to avoid passing parameters e
 Then run:
 
 ```powershell
-.\bw-shield.ps1 -ConfigPath .\my-config.json
+.\secret-gate.ps1 -ConfigPath .\my-config.json
 ```
 
 Precedence: CLI parameters > config file > `config/defaults.json`.
 
 ## How It Works
 
-### Default (Current Session) Mode
-
 ```
 Current Terminal (AI agent is here)
   |
-  |-- bw-shield.ps1
-        |-- bw status               (check lock state)
-        |-- Read-Host -AsSecureString  (master password hidden)
-        |-- bw unlock --raw          (session key in $env:BW_SESSION)
-        |-- bw list items            (retrieve access token)
-        |-- $env:BWS_ACCESS_TOKEN    (set in current session)
-        |-- AI can now run bw/bws    (available in current shell)
+  |-- secret-gate.ps1
+        |-- Check for cached session        (saved to %LOCALAPPDATA%\secret-gate\)
+        |-- If cached & valid → load, skip auth
+        |-- If not cached:
+        |     |-- GUI password dialog        (masked, not in terminal output)
+        |     |-- bw unlock                  (session key in $env:BW_SESSION)
+        |     |-- bw list items              (retrieve access token)
+        |     |-- $env:BWS_ACCESS_TOKEN      (set in current session)
+        |     |-- Cache session to disk
+        |-- AI can now run bw/bws            (available in current shell)
 ```
 
 ### Security Properties
 
-- **Master password never echoed**: `Read-Host -AsSecureString` suppresses all characters from terminal output and scrollback.
-- **No disk persistence**: Secrets are never written to files.
+- **Master password never echoed**: Either via GUI dialog (masked) or `Read-Host -AsSecureString` (silent mode).
+- **No disk persistence**: The session cache at `%LOCALAPPDATA%\secret-gate\session.json` stores only the short-lived session key and the machine access token (which is the same token you already store in your password manager vault).
 - **No command-line leakage**: The master password is piped to `bw` via stdin, never appearing in process arguments.
-- **Session-scoped only**: Environment variables last only until you close the terminal.
+- **Session-scoped**: Environment variables last only until you close the terminal. Delete the cache file to force re-authentication.
 
 ## Vault Setup
 
-Before running `bw-shield`, create a Password Manager vault item:
+Before running `secret-gate`, create a Password Manager vault item:
 
 1. Open the Bitwarden web vault.
 2. Create a new item named `Bitwarden SM - ops-bootstrap Access Token` (or whatever you configure in `vaultItemName`).
@@ -166,11 +149,11 @@ Install the Bitwarden CLI and ensure it is on your system PATH.
 
 ### "You are not logged in to Bitwarden on this device"
 
-Run `bw login` in any terminal first. `bw-shield` only performs `bw unlock`; it does not handle the initial device login.
+Run `bw login` in any terminal first. `secret-gate` only performs `bw unlock`; it does not handle the initial device login.
 
 ### "Failed to switch Bitwarden server"
 
-If you recently changed servers, run `bw logout` first, then `bw login` with the new server, then re-run `bw-shield`.
+If you recently changed servers, run `bw logout` first, then `bw login` with the new server, then re-run `secret-gate`.
 
 ### "Vault item not found"
 
@@ -182,11 +165,7 @@ bw list items --search "ops-bootstrap" | ConvertFrom-Json | Select-Object name
 
 ### "The window opens and immediately closes" / "PowerShell is in NonInteractive mode"
 
-You are in a non-interactive shell. Run `bw-shield.ps1` directly — it uses a GUI password dialog that works in both interactive and non-interactive shells.
-
-### "The argument 'D:\01' is not recognized as the name of a script file"
-
-Path with spaces issue in older launchers. Use `bw-shield.ps1` directly — it handles paths correctly via `$PSCommandPath`.
+You are in a non-interactive shell. Run `secret-gate.ps1` directly — it uses a GUI password dialog that works in both interactive and non-interactive shells.
 
 ### "Access Token field is empty"
 
