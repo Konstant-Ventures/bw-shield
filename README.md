@@ -131,6 +131,80 @@ Before running `secret-gate`, create a Password Manager vault item:
 4. Paste your Secrets Manager machine-account access token into that field.
 5. Save the item.
 
+## Preferred Pattern: Adding Application Secrets
+
+When a project needs a new secret, use a placeholder-first workflow. The AI agent may create the secret record, but the user must enter the real value in the Bitwarden web UI.
+
+1. The AI agent authenticates through `secret-gate`:
+
+```powershell
+. "D:\01 - Workspace\repos\secret-gate\Start-SecretGate.ps1"
+```
+
+2. The AI agent creates a placeholder secret in Bitwarden Secrets Manager:
+
+```powershell
+bws secret create `
+  SECRET_NAME `
+  "TODO_REPLACE_IN_BITWARDEN_WEB_UI" `
+  PROJECT_ID `
+  --note "Purpose and owning project. Replace this placeholder in the Bitwarden web UI." `
+  --output none
+```
+
+3. The AI agent tells the user which secret was created and links to the web UI:
+
+```text
+Update the placeholder in Bitwarden Secrets Manager:
+https://vault.bitwarden.eu/#/sm
+```
+
+4. The user opens the Bitwarden web UI and replaces the placeholder value with the real secret.
+
+5. The application loads the secret at runtime from the server or local process environment. Frontend bundles must not receive provider keys through `VITE_*` variables or any other build-time public environment variable.
+
+### AI Agent Rules
+
+- Do not ask the user to paste secret values into chat.
+- Do not print secret values to terminal output.
+- Do not commit `.env`, `.env.local`, access tokens, API keys, or generated secret dumps.
+- Prefer `--output none` when creating secrets.
+- If a command must inspect existing secrets, capture output into variables and report only secret names, project names, or IDs.
+- If the desired Secrets Manager project cannot be created because of plan limits, use the existing `workspaces` project and document that choice in the consuming project.
+
+### Current Workspace Example
+
+AI Writing Copilot uses this local-run secret:
+
+| Project | Secret | Purpose |
+|---------|--------|---------|
+| `workspaces` | `AI_WRITING_COPILOT_OPENCODE_API_KEY` | Server-side OpenCode Go API key for local and deployed `/api/chat` calls |
+
+The placeholder has been created. Update it here:
+
+```text
+https://vault.bitwarden.eu/#/sm
+```
+
+### Inbox Agent (Email Daemon)
+
+The Inbox Agent uses these secrets:
+
+| Project | Secret | Purpose |
+|---------|--------|---------|
+| `workspaces` | `INBOX_TELEGRAM_BOT_TOKEN` | Telegram Bot token from @BotFather |
+| `workspaces` | `INBOX_OWNER_USER_ID` | Numeric Telegram user ID |
+| `workspaces` | `INBOX_TELEGRAM_GROUP_CHAT_ID` | Telegram group chat ID (optional) |
+| `workspaces` | `INBOX_GMAIL_CLIENT_ID` | Google Cloud OAuth client ID |
+| `workspaces` | `INBOX_GMAIL_CLIENT_SECRET` | Google Cloud OAuth client secret |
+| `workspaces` | `INBOX_OPENCODE_API_KEY` | OpenCode API key for LLM calls |
+
+Placeholder secrets have been created. Update them here:
+
+```text
+https://vault.bitwarden.eu/#/sm
+```
+
 ## Testing
 
 A mock-based end-to-end test suite is included in `tests/`.
