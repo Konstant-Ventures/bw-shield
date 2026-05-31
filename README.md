@@ -195,9 +195,9 @@ The Inbox Agent uses these secrets:
 | `workspaces` | `INBOX_TELEGRAM_BOT_TOKEN` | Telegram Bot token from @BotFather |
 | `workspaces` | `INBOX_OWNER_USER_ID` | Numeric Telegram user ID |
 | `workspaces` | `INBOX_TELEGRAM_GROUP_CHAT_ID` | Telegram group chat ID (optional) |
-| `workspaces` | `INBOX_GMAIL_CLIENT_ID` | Google Cloud OAuth client ID |
-| `workspaces` | `INBOX_GMAIL_CLIENT_SECRET` | Google Cloud OAuth client secret |
-| `workspaces` | `INBOX_OPENCODE_API_KEY` | OpenCode API key for LLM calls |
+| `workspaces` | `INBOX_GOOGLE_CLIENT_ID` | Google Cloud OAuth client ID (Gmail, Calendar, etc.) |
+| `workspaces` | `INBOX_GOOGLE_CLIENT_SECRET` | Google Cloud OAuth client secret |
+| `workspaces` | `AI_WRITING_COPILOT_OPENCODE_API_KEY` | **Reused** — OpenCode API key for LLM calls |
 
 Placeholder secrets have been created. Update them here:
 

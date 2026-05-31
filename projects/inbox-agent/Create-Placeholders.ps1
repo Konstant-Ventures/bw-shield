@@ -33,10 +33,11 @@ $secrets = @(
     @{ name = 'INBOX_TELEGRAM_BOT_TOKEN';      note = 'Telegram Bot token from @BotFather. Replace placeholder in Bitwarden web UI.' }
     @{ name = 'INBOX_OWNER_USER_ID';           note = 'Numeric Telegram user ID. Replace placeholder in Bitwarden web UI.' }
     @{ name = 'INBOX_TELEGRAM_GROUP_CHAT_ID';  note = 'Telegram group chat ID (optional). Replace placeholder in Bitwarden web UI.' }
-    @{ name = 'INBOX_GMAIL_CLIENT_ID';         note = 'Google Cloud OAuth client ID. Replace placeholder in Bitwarden web UI.' }
-    @{ name = 'INBOX_GMAIL_CLIENT_SECRET';     note = 'Google Cloud OAuth client secret. Replace placeholder in Bitwarden web UI.' }
-    @{ name = 'INBOX_OPENCODE_API_KEY';        note = 'OpenCode API key for LLM calls. Replace placeholder in Bitwarden web UI.' }
+    @{ name = 'INBOX_GOOGLE_CLIENT_ID';        note = 'Google Cloud OAuth client ID. Supports Gmail, Calendar, and other Google Workspace APIs. Replace placeholder in Bitwarden web UI.' }
+    @{ name = 'INBOX_GOOGLE_CLIENT_SECRET';    note = 'Google Cloud OAuth client secret. Supports Gmail, Calendar, and other Google Workspace APIs. Replace placeholder in Bitwarden web UI.' }
 )
+
+Write-Host '[INFO] Reuses existing AI_WRITING_COPILOT_OPENCODE_API_KEY for LLM calls.' -ForegroundColor DarkGray
 
 foreach ($secret in $secrets) {
     try {
