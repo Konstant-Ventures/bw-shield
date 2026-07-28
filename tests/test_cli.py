@@ -19,6 +19,7 @@ from secret_gate import run, load_session, save_session, is_session_valid, SESSI
 from secret_gate.auth import authenticate
 from secret_gate.config import get_config
 from secret_gate.refresh import filter_secrets, export_secrets, print_export_lines
+from secret_gate.gui import password_dialog
 
 
 # ── config tests ──────────────────────────────────────────────────
@@ -102,6 +103,25 @@ def test_print_export_lines_escapes_dollar(capsys):
     print_export_lines(secrets)
     captured = capsys.readouterr()
     assert "\\$" in captured.out
+
+
+def test_linux_password_dialog_prefers_visible_gui(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr("secret_gate.gui._linux_gui_dialog", lambda title: "secret")
+    monkeypatch.setattr(
+        "secret_gate.gui._unix_secure_input",
+        lambda title: pytest.fail("getpass should not be used when GUI is available"),
+    )
+
+    assert password_dialog() == "secret"
+
+
+def test_linux_password_dialog_falls_back_without_gui(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setattr("secret_gate.gui._linux_gui_dialog", lambda title: None)
+    monkeypatch.setattr("secret_gate.gui._unix_secure_input", lambda title: "secret")
+
+    assert password_dialog() == "secret"
 
 
 # ── auth tests ────────────────────────────────────────────────────

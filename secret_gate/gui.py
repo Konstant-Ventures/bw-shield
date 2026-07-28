@@ -2,7 +2,8 @@
 Cross-platform GUI password dialog for Secret Gate.
 
 On Windows: uses tkinter (built-in).
-On macOS/Linux: falls back to stdin-based secure input.
+On Linux desktops: uses zenity when available.
+On macOS and headless Unix: falls back to stdin-based secure input.
 """
 
 import sys
@@ -15,7 +16,9 @@ def password_dialog(title: str = "secret-gate") -> str:
     On Windows, uses a tkinter GUI dialog that works even in
     NonInteractive shells (AI agents, CI runners, scheduled tasks).
 
-    On other platforms, falls back to getpass.
+    On Linux desktops, prefers a visible zenity dialog so authentication
+    launched by an AI agent is not trapped in a hidden subprocess terminal.
+    Other platforms fall back to getpass.
 
     Returns:
         The entered password as a string.
@@ -25,8 +28,42 @@ def password_dialog(title: str = "secret-gate") -> str:
     """
     if sys.platform == "win32":
         return _windows_gui_dialog(title)
-    else:
-        return _unix_secure_input(title)
+    if sys.platform.startswith("linux"):
+        password = _linux_gui_dialog(title)
+        if password is not None:
+            return password
+    return _unix_secure_input(title)
+
+
+def _linux_gui_dialog(title: str) -> str | None:
+    """Show a zenity password dialog when a Linux desktop is available."""
+    import os
+    import shutil
+    import subprocess
+
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return None
+    zenity = shutil.which("zenity")
+    if not zenity:
+        return None
+
+    result = subprocess.run(
+        [
+            zenity,
+            "--password",
+            f"--title={title} — Bitwarden authentication",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError("Authentication cancelled or GUI dialog failed.")
+
+    password = result.stdout.rstrip("\r\n")
+    if not password:
+        raise RuntimeError("No password entered.")
+    return password
 
 
 def _windows_gui_dialog(title: str) -> str:
