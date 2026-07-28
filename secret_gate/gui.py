@@ -7,6 +7,7 @@ On macOS and headless Unix: falls back to stdin-based secure input.
 """
 
 import sys
+from typing import Optional
 
 
 def password_dialog(title: str = "secret-gate") -> str:
@@ -35,7 +36,7 @@ def password_dialog(title: str = "secret-gate") -> str:
     return _unix_secure_input(title)
 
 
-def _linux_gui_dialog(title: str) -> str | None:
+def _linux_gui_dialog(title: str) -> Optional[str]:
     """Show a zenity password dialog when a Linux desktop is available."""
     import os
     import shutil

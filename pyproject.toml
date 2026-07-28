@@ -33,7 +33,7 @@ secret-gate = "secret_gate.cli:main"
 dev = [
     "pytest",
     "pytest-cov",
-    "ruff",
+    "ruff==0.8.6",
     "mypy",
 ]
 

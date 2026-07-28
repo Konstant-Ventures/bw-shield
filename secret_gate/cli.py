@@ -23,7 +23,7 @@ import argparse
 import os
 import sys
 
-from secret_gate import is_session_valid, load_session, save_session, SESSION_FILE
+from secret_gate import is_session_valid, load_session, SESSION_FILE
 from secret_gate.auth import authenticate
 from secret_gate.config import get_config
 from secret_gate.refresh import (
@@ -113,7 +113,7 @@ def cmd_status() -> None:
         session = load_session()
         bw = len(session.get("BW_SESSION") or "")
         bws = len(session.get("BWS_ACCESS_TOKEN") or "")
-        print(f"Status: authenticated")
+        print("Status: authenticated")
         print(f"        BW_SESSION       = {bw} chars")
         print(f"        BWS_ACCESS_TOKEN  = {bws} chars")
         print(f"        Cache             = {SESSION_FILE}")

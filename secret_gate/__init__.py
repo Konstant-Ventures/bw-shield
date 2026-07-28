@@ -11,7 +11,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Tuple, Optional
+from typing import Tuple, Optional
 
 __version__ = "1.0.0"
 
