@@ -7,39 +7,28 @@ on:
     branches: [main]
 
 jobs:
-  lint:
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install PSScriptAnalyzer
-        shell: pwsh
-        run: |
-          Set-PSRepository PSGallery -InstallationPolicy Trusted
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-      - name: Run PSScriptAnalyzer
-        shell: pwsh
-        run: |
-          $results = Invoke-ScriptAnalyzer -Path ./secret-gate.ps1 -Severity Warning -Recurse
-          $results | Format-Table -AutoSize
-          if ($results) { exit 1 }
+      - name: Install package
+        run: pip install -e ".[dev]"
 
-  syntax:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Run tests
+        run: pytest -v
 
-      - name: Syntax check
-        shell: pwsh
-        run: |
-          $errors = $null
-          $ast = [System.Management.Automation.Language.Parser]::ParseFile(
-              "$PWD/secret-gate.ps1",
-              [ref]$null,
-              [ref]$errors
-          )
-          if ($errors) {
-              $errors | ForEach-Object { Write-Error $_.Message }
-              exit 1
-          }
+      - name: Lint
+        run: ruff check secret_gate/
+
+      - name: Type check
+        run: mypy secret_gate/ --ignore-missing-imports

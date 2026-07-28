@@ -1,5 +1,17 @@
 {
   "serverUrl": "https://vault.bitwarden.eu",
   "vaultItemName": "Bitwarden SM - ops-bootstrap Access Token",
-  "accessTokenFieldName": "Access Token"
+  "accessTokenFieldName": "Access Token",
+  "sets": {
+    "all": "*",
+    "ci": ["CONDUCTOR_MCP_AUTH_TOKEN"],
+    "inbox-agent": [
+      "INBOX_TELEGRAM_BOT_TOKEN",
+      "INBOX_OWNER_USER_ID",
+      "INBOX_TELEGRAM_GROUP_CHAT_ID",
+      "INBOX_GOOGLE_CLIENT_ID",
+      "INBOX_GOOGLE_CLIENT_SECRET",
+      "AI_WRITING_COPILOT_OPENCODE_API_KEY"
+    ]
+  }
 }
