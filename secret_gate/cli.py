@@ -23,7 +23,7 @@ import argparse
 import os
 import sys
 
-from secret_gate import is_session_valid, load_session, save_session, SESSION_FILE
+from secret_gate import is_session_valid, load_session, SESSION_FILE
 from secret_gate.auth import authenticate
 from secret_gate.config import get_config
 from secret_gate.refresh import (
@@ -93,8 +93,7 @@ def cmd_refresh(args: argparse.Namespace) -> None:
         print(f"[OK] Exported {len(exported)} environment variable(s)", file=sys.stderr)
         for var in sorted(exported)[:10]:
             val = os.environ.get(var, "")
-            preview = f"{val[:40]}..." if len(val) > 40 else val
-            print(f"     {var}={preview}", file=sys.stderr)
+            print(f"     {var} ({len(val)} chars)", file=sys.stderr)
         if len(exported) > 10:
             print(f"     ... and {len(exported) - 10} more", file=sys.stderr)
         print_export_lines(filtered, shell=args.shell)
@@ -114,7 +113,7 @@ def cmd_status() -> None:
         session = load_session()
         bw = len(session.get("BW_SESSION") or "")
         bws = len(session.get("BWS_ACCESS_TOKEN") or "")
-        print(f"Status: authenticated")
+        print("Status: authenticated")
         print(f"        BW_SESSION       = {bw} chars")
         print(f"        BWS_ACCESS_TOKEN  = {bws} chars")
         print(f"        Cache             = {SESSION_FILE}")

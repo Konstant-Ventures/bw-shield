@@ -40,7 +40,7 @@ def authenticate(
             "success": False,
             "bw_session": None,
             "bws_token": None,
-            "message": f"Not logged in to Bitwarden. Run 'bw login' first.",
+            "message": "Not logged in to Bitwarden. Run 'bw login' first.",
         }
 
     try:
